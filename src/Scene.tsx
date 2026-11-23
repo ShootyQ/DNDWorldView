@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
 import { Canvas, ThreeEvent, useThree } from "@react-three/fiber";
 import { OrbitControls, Html } from "@react-three/drei";
 import * as THREE from "three";
+import {House} from "./House";
 import { portraitUrl } from "./local";
 import {
   heightAt,
@@ -220,6 +221,7 @@ function Box({
 export function Model({ o }: { o: WorldObject }) {
   const c = o.color;
   switch (o.asset) {
+    case "cottage": return <House object={o}/>;
     case "tree":
       return (
         <>

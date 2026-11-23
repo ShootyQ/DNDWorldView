@@ -62,3 +62,14 @@ Use a `road` operation to paint a continuous road and preserve its centerline fo
 ```
 
 Points use the same X/Z bounds; radius is 2–40 m, with 1–400 points and at most 100 roads per world. Sparse points are interpolated when painting. Road IDs share the object/location ID namespace. The world’s `roads` array is included in context exports; older saves default to an empty array without changing their existing paint. The editor’s house action generates ordinary `add` object operations as one batch, so cottages remain independently editable afterward. The road brush defaults to radius 4 m.
+
+## Cottage appearance
+
+Objects with `asset: "cottage"` accept these optional appearance fields, individually editable with normal `update` operations:
+
+- `houseStyle`: `willow`, `hearthstone`, `merchant`, `riverside`, or `garden`.
+- `roofStyle`: `gable`, `hip`, or `gambrel`.
+- `roofMaterial`: `tiles`, `slate`, or `thatch`.
+- `roofColor` and `trimColor`: six-digit hex colors; existing `color` controls walls.
+
+Omitted fields use stable defaults based on the object's ID, preserving old saves. Include explicit appearance fields to make generated neighborhoods reproducible. Colors and roof choices remain independent when switching the house design. New detailed houses fit within a 7 m ground radius; leave at least 15.5 m between cottage centers and appropriate setbacks from roads. Road auto-placement already accounts for this footprint.

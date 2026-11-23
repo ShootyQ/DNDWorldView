@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { houseStyles, roofStyles, roofMaterials } from "./houses";
 export const SIZE = 256,
   GRID = 65;
 export const assets = [
@@ -22,6 +23,17 @@ export const objectSchema = z
     z: z.number().min(-128).max(128),
     rotation: z.number().finite(),
     color: z.string().regex(/^#[0-9a-f]{6}$/i),
+    houseStyle: z.enum(houseStyles).optional(),
+    roofStyle: z.enum(roofStyles).optional(),
+    roofMaterial: z.enum(roofMaterials).optional(),
+    roofColor: z
+      .string()
+      .regex(/^#[0-9a-f]{6}$/i)
+      .optional(),
+    trimColor: z
+      .string()
+      .regex(/^#[0-9a-f]{6}$/i)
+      .optional(),
     portrait: z
       .string()
       .max(100)

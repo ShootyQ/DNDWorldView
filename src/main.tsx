@@ -15,6 +15,16 @@ import {
   worldSchema,
 } from "../shared/world";
 import "./style.css";
+import { HouseThumb } from "./HouseThumb";
+import {
+  houseDesigns,
+  houseAppearance,
+  randomHouse,
+  roofColors,
+  wallColors,
+  trimColors,
+  type HouseStyle,
+} from "../shared/houses";
 import { housesAlongRoad } from "../shared/roads";
 import { standalone, LocalSession, clientFetch } from "./local";
 const token = standalone
@@ -71,6 +81,7 @@ function App() {
     [point, setPoint] = useState({ x: 0, z: 0 }),
     [undo, setUndo] = useState(false),
     [redo, setRedo] = useState(false);
+  const [newHouseStyle, setNewHouseStyle] = useState<HouseStyle | null>(null);
   const [selectedRoad, setSelectedRoad] = useState<string | null>(null);
   const [houseSpacing, setHouseSpacing] = useState(18);
   const view = useRef<CameraView | null>(null);
@@ -233,6 +244,17 @@ function App() {
         color: colors[Math.floor(Math.random() * colors.length)],
       },
     }));
+    if (asset === "cottage")
+      for (const op of additions) {
+        Object.assign(
+          op.object,
+          randomHouse(op.object.id, newHouseStyle || undefined),
+        );
+        if (newHouseStyle)
+          op.object.name = houseDesigns.find(
+            (d) => d.id === newHouseStyle,
+          )!.name;
+      }
     operations(additions);
     if (count === 1) setSelected(additions[0].object.id);
   }
@@ -368,6 +390,38 @@ function App() {
             </nav>
             {tab === "build" && (
               <>
+                <div className="house-collection">
+                  <div className="section-heading">
+                    <h3>The house collection</h3>
+                    <span>5 DESIGNS · ENDLESS COLOR</span>
+                  </div>
+                  <div className="house-cards">
+                    {houseDesigns.map((d) => (
+                      <button
+                        key={d.id}
+                        aria-label={`Place ${d.name}`}
+                        className={
+                          "house-card " +
+                          (place === "cottage" && newHouseStyle === d.id
+                            ? "chosen"
+                            : "")
+                        }
+                        onClick={() => {
+                          setNewHouseStyle(d.id);
+                          setPlace("cottage");
+                          setTool("select");
+                        }}
+                      >
+                        <HouseThumb style={d.id} />
+                        <span>
+                          <b>{d.name}</b>
+                          <small>{d.description}</small>
+                        </span>
+                        <i>＋</i>
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="section-heading">
                   <h3>The essentials</h3>
                   <span>CLICK TO PLACE</span>
@@ -379,6 +433,7 @@ function App() {
                       key={asset}
                       onClick={() => {
                         setPlace(asset);
+                        if (asset === "cottage") setNewHouseStyle(null);
                         setTool("select");
                       }}
                     >
@@ -764,6 +819,131 @@ function App() {
                   </label>
                 ))}
               </div>
+              {object.asset === "cottage" &&
+                (() => {
+                  const appearance = houseAppearance(object);
+                  const update = (changes: Partial<WorldObject>) =>
+                    operations([{ type: "update", id: object.id, changes }]);
+                  return (
+                    <section className="house-editor">
+                      <span className="eyebrow">MAKE IT YOUR OWN</span>
+                      <label>
+                        House design
+                        <select
+                          aria-label="House design"
+                          value={appearance.houseStyle}
+                          onChange={(e) =>
+                            update({ houseStyle: e.target.value as HouseStyle })
+                          }
+                        >
+                          {houseDesigns.map((d) => (
+                            <option key={d.id} value={d.id}>
+                              {d.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="roof-selects">
+                        <label>
+                          Roof shape
+                          <select
+                            aria-label="Roof shape"
+                            value={appearance.roofStyle}
+                            onChange={(e) =>
+                              update({
+                                roofStyle: e.target
+                                  .value as typeof appearance.roofStyle,
+                              })
+                            }
+                          >
+                            <option value="gable">Gabled</option>
+                            <option value="hip">Hipped</option>
+                            <option value="gambrel">Gambrel</option>
+                          </select>
+                        </label>
+                        <label>
+                          Roof finish
+                          <select
+                            aria-label="Roof finish"
+                            value={appearance.roofMaterial}
+                            onChange={(e) =>
+                              update({
+                                roofMaterial: e.target
+                                  .value as typeof appearance.roofMaterial,
+                              })
+                            }
+                          >
+                            <option value="tiles">Clay tiles</option>
+                            <option value="slate">Slate shingles</option>
+                            <option value="thatch">Thatch</option>
+                          </select>
+                        </label>
+                      </div>
+                      {(
+                        [
+                          { key: "color", title: "Walls", colors: wallColors },
+                          {
+                            key: "roofColor",
+                            title: "Roof",
+                            colors: roofColors,
+                          },
+                          {
+                            key: "trimColor",
+                            title: "Trim",
+                            colors: trimColors,
+                          },
+                        ] as const
+                      ).map((section) => (
+                        <div className="material-row" key={section.key}>
+                          <label>
+                            {section.title}
+                            <input
+                              aria-label={`${section.title} color`}
+                              type="color"
+                              value={appearance[section.key]}
+                              onChange={(e) =>
+                                update({ [section.key]: e.target.value })
+                              }
+                            />
+                          </label>
+                          <div className="swatches">
+                            {section.colors.map((c) => (
+                              <button
+                                key={c.color}
+                                aria-label={`${section.title}: ${c.name}`}
+                                title={c.name}
+                                className={
+                                  appearance[section.key].toLowerCase() ===
+                                  c.color
+                                    ? "selected"
+                                    : ""
+                                }
+                                style={{ backgroundColor: c.color }}
+                                onClick={() =>
+                                  update({ [section.key]: c.color })
+                                }
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      <button
+                        className="wide"
+                        onClick={() =>
+                          update(
+                            randomHouse(object.id + Date.now() + Math.random()),
+                          )
+                        }
+                      >
+                        ✧ Surprise me
+                      </button>
+                      <p className="house-note">
+                        Five designs × three roof shapes × three finishes × your
+                        own colors. Every change is undoable.
+                      </p>
+                    </section>
+                  );
+                })()}
               <div className="inspector-actions">
                 <button
                   onClick={() => {
@@ -812,22 +992,24 @@ function App() {
                   Delete
                 </button>
               </div>
-              <label>
-                Color{" "}
-                <input
-                  type="color"
-                  value={object.color}
-                  onChange={(e) =>
-                    operations([
-                      {
-                        type: "update",
-                        id: object.id,
-                        changes: { color: e.target.value },
-                      },
-                    ])
-                  }
-                />
-              </label>
+              {object.asset !== "cottage" && (
+                <label>
+                  Color{" "}
+                  <input
+                    type="color"
+                    value={object.color}
+                    onChange={(e) =>
+                      operations([
+                        {
+                          type: "update",
+                          id: object.id,
+                          changes: { color: e.target.value },
+                        },
+                      ])
+                    }
+                  />
+                </label>
+              )}
               {Math.abs(
                 heightAt(world, object.x + 3, object.z) -
                   heightAt(world, object.x - 3, object.z),

@@ -1,3 +1,4 @@
+import { randomHouse } from "./houses";
 import {
   heightAt,
   type World,
@@ -6,7 +7,7 @@ import {
   type WorldObject,
 } from "./world";
 const footprint: Record<WorldObject["asset"], number> = {
-  cottage: 5.5,
+  cottage: 7,
   tavern: 7.5,
   tower: 5,
   tree: 3.2,
@@ -77,10 +78,10 @@ export function housesAlongRoad(
       nz = (s.b.x - s.a.x) / s.length;
     for (const side of [1, -1]) {
       if (houses.length >= count) break;
-      const setback = road.radius + 8,
+      const setback = road.radius + 9,
         x = center.x + nx * setback * side,
         z = center.z + nz * setback * side;
-      if (Math.abs(x) > 122 || Math.abs(z) > 122) continue;
+      if (Math.abs(x) > 120 || Math.abs(z) > 120) continue;
       const heights = [
         [-5, -5],
         [0, -5],
@@ -99,11 +100,11 @@ export function housesAlongRoad(
         continue;
       if (
         [...world.objects, ...houses].some(
-          (o) => Math.hypot(o.x - x, o.z - z) < footprint[o.asset] + 7,
+          (o) => Math.hypot(o.x - x, o.z - z) < footprint[o.asset] + 8.5,
         )
       )
         continue;
-      if (world.roads.some((r) => distanceToRoad({ x, z }, r) < r.radius + 7))
+      if (world.roads.some((r) => distanceToRoad({ x, z }, r) < r.radius + 8.5))
         continue;
       let id =
         "house-" +
@@ -125,9 +126,7 @@ export function housesAlongRoad(
         x,
         z,
         rotation: Math.atan2(center.x - x, center.z - z),
-        color: ["#bba17b", "#c3b094", "#b78c70", "#a8b09a", "#c7a67e"][
-          houses.length % 5
-        ],
+        ...randomHouse(id),
       });
     }
   }

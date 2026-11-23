@@ -932,3 +932,149 @@ footer b {
 .road-builder .wide {
   white-space: normal;
 }
+
+.house-cards {
+  padding: 0 22px;
+  display: grid;
+  gap: 8px;
+}
+.house-card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  text-align: left;
+  background: #fffdf7;
+}
+.house-card svg {
+  width: 75px;
+  height: 58px;
+  flex-shrink: 0;
+}
+.house-card span {
+  flex: 1;
+}
+.house-card b {
+  display: block;
+  font-size: 11px;
+}
+.house-card small {
+  display: block;
+  font-size: 9px;
+  color: #89947f;
+  line-height: 1.5;
+  margin-top: 4px;
+}
+.house-card i {
+  font-style: normal;
+  color: #85947c;
+}
+.house-card.chosen {
+  background: #e9efdf;
+  border-color: #82976b;
+}
+.house-collection .section-heading > span {
+  font-size: 7px;
+  letter-spacing: 0.7px;
+}
+.house-editor {
+  border-top: 1px solid #dce1d5;
+  padding: 15px 0;
+  margin-top: 3px;
+}
+.inspector {
+  max-height: calc(100% - 160px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.house-editor label {
+  display: block !important;
+  margin-top: 12px !important;
+  font-size: 10px !important;
+}
+.house-editor select {
+  width: 100%;
+  display: block;
+  margin-top: 6px;
+  padding: 7px 5px;
+  border: 1px solid #d7ddcf;
+  border-radius: 5px;
+  background: #fffdf6;
+  color: #304638;
+  font: inherit;
+  font-size: 11px;
+}
+.roof-selects {
+  display: flex;
+  gap: 8px;
+}
+.roof-selects label {
+  flex: 1;
+  min-width: 0;
+}
+.house-editor .material-row label {
+  display: flex !important;
+  margin-top: 14px !important;
+  align-items: center;
+  justify-content: space-between;
+}
+.swatches {
+  display: flex;
+  gap: 5px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.swatches button {
+  height: 20px;
+  width: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid #fffdf5;
+  outline: 1px solid #d2d7c8;
+}
+.swatches button.selected {
+  outline: 2px solid #375b40;
+}
+.house-editor .wide {
+  margin-top: 15px;
+}
+.house-note {
+  font-size: 9px !important;
+  line-height: 1.6 !important;
+  margin-bottom: 0;
+}
+.house-editor + .inspector-actions {
+  padding-top: 8px;
+  border-top: 1px solid #dde2d5;
+}
+@media (max-width: 600px) {
+  .house-cards {
+    padding: 0 10px;
+  }
+  .house-card {
+    padding: 4px;
+    gap: 4px;
+  }
+  .house-card svg {
+    width: 48px;
+    height: 45px;
+  }
+  .house-card b {
+    font-size: 9px;
+  }
+  .house-card small {
+    font-size: 7px;
+  }
+  .house-card i {
+    display: none;
+  }
+  .roof-selects {
+    display: block;
+  }
+  .swatches {
+    gap: 7px;
+  }
+  .house-editor select {
+    font-size: 10px;
+  }
+}
