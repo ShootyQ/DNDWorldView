@@ -5,6 +5,9 @@ import * as THREE from "three";
 import { portraitUrl } from "./local";
 import {
   heightAt,
+  brush,
+  type BrushMode,
+  type Point,
   type World,
   type WorldObject,
   type CameraView,
@@ -15,33 +18,117 @@ function Terrain({
   onGround,
   painting,
   radius,
+  mode,
   onStroke,
   meshRef,
 }: {
-  meshRef: React.RefObject<THREE.Mesh | null>;
   world: World;
   onGround: (x: number, z: number) => void;
   painting: boolean;
   radius: number;
-  onStroke: (points: { x: number; z: number }[]) => void;
+  mode: BrushMode;
+  onStroke: (points: Point[]) => void;
+  meshRef: React.RefObject<THREE.Mesh | null>;
 }) {
-  const stroke = useRef<{ x: number; z: number }[]>([]);
-  const [hover, setHover] = useState<{ x: number; z: number } | null>(null);
+  const stroke = useRef<{
+    points: Point[];
+    draft: World;
+    pointerId: number;
+    capture: { releasePointerCapture: (id: number) => void };
+    mode: BrushMode;
+    radius: number;
+  } | null>(null);
+  const [draft, setDraft] = useState<World | null>(null),
+    [hover, setHover] = useState<Point | null>(null);
+  const displayed = draft || world;
   const geometry = useMemo(() => {
     const g = new THREE.PlaneGeometry(256, 256, 64, 64);
     g.rotateX(-Math.PI / 2);
-    const p = g.attributes.position;
-    const colors = [];
+    const p = g.attributes.position,
+      colors: number[] = [];
     for (let i = 0; i < p.count; i++) {
-      p.setY(i, world.heights[i]);
-      const c = new THREE.Color(palette[world.paint[i]]);
+      p.setY(i, displayed.heights[i]);
+      const c = new THREE.Color(palette[displayed.paint[i]]);
       colors.push(c.r, c.g, c.b);
     }
     g.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
     g.computeVertexNormals();
     return g;
-  }, [world.heights, world.paint]);
+  }, [displayed.heights, displayed.paint]);
   useEffect(() => () => geometry.dispose(), [geometry]);
+  function cancel() {
+    const current = stroke.current;
+    stroke.current = null;
+    if (current) {
+      try {
+        current.capture.releasePointerCapture(current.pointerId);
+      } catch {}
+    }
+    setDraft(null);
+  }
+  useEffect(() => {
+    function escape(e: KeyboardEvent) {
+      if (e.key === "Escape") cancel();
+    }
+    window.addEventListener("keydown", escape);
+    window.addEventListener("blur", cancel);
+    return () => {
+      window.removeEventListener("keydown", escape);
+      window.removeEventListener("blur", cancel);
+      cancel();
+    };
+  }, []);
+  useEffect(() => {
+    cancel();
+  }, [painting, mode, radius, world.revision, world.id]);
+  function pointAt(e: ThreeEvent<PointerEvent>) {
+    if (!meshRef.current) return null;
+    const ray = new THREE.Raycaster(e.ray.origin, e.ray.direction);
+    const hit = ray.intersectObject(meshRef.current, false)[0];
+    return hit
+      ? {
+          x: Math.max(-128, Math.min(128, hit.point.x)),
+          z: Math.max(-128, Math.min(128, hit.point.z)),
+        }
+      : null;
+  }
+  function publish() {
+    const current = stroke.current;
+    if (current)
+      setDraft({
+        ...current.draft,
+        heights: [...current.draft.heights],
+        paint: [...current.draft.paint],
+      });
+  }
+  function stamp(point: Point) {
+    const current = stroke.current;
+    if (!current || current.points.length >= 400) return;
+    current.points.push(point);
+    brush(current.draft, {
+      type: "brush",
+      mode: current.mode,
+      ...point,
+      radius: current.radius,
+      strength: 1.5,
+    });
+  }
+  function extend(point: Point, endpoint = false) {
+    const current = stroke.current;
+    if (!current) return;
+    const last = current.points.at(-1)!;
+    const distance = Math.hypot(point.x - last.x, point.z - last.z),
+      spacing = Math.max(1, Math.min(2, current.radius / 3));
+    if (distance < spacing && !endpoint) return;
+    if (distance < 0.001) return;
+    const n = Math.max(1, Math.ceil(distance / spacing));
+    for (let i = 1; i <= n && current.points.length < 400; i++)
+      stamp({
+        x: last.x + ((point.x - last.x) * i) / n,
+        z: last.z + ((point.z - last.z) * i) / n,
+      });
+    publish();
+  }
   return (
     <>
       <mesh
@@ -49,32 +136,42 @@ function Terrain({
         geometry={geometry}
         receiveShadow
         onPointerDown={(e) => {
-          if (!painting) return;
+          if (!painting || e.button !== 0 || stroke.current) return;
+          const point = pointAt(e);
+          if (!point) return;
           e.stopPropagation();
           (e.target as any).setPointerCapture(e.pointerId);
-          stroke.current = [{ x: e.point.x, z: e.point.z }];
+          stroke.current = {
+            points: [],
+            draft: structuredClone(world),
+            pointerId: e.pointerId,
+            capture: e.target as any,
+            mode,
+            radius,
+          };
+          stamp(point);
+          setHover(point);
+          publish();
         }}
         onPointerMove={(e) => {
           if (!painting) return;
           e.stopPropagation();
-          const point = { x: e.point.x, z: e.point.z };
+          const point = pointAt(e);
+          if (!point) return;
           setHover(point);
-          const last = stroke.current.at(-1);
-          if (
-            last &&
-            stroke.current.length < 200 &&
-            Math.hypot(last.x - point.x, last.z - point.z) >
-              Math.max(1, radius / 3)
-          )
-            stroke.current.push(point);
+          if (stroke.current?.pointerId === e.pointerId) extend(point);
         }}
         onPointerUp={(e) => {
-          if (!painting || !stroke.current.length) return;
+          const current = stroke.current;
+          if (!current || current.pointerId !== e.pointerId) return;
           e.stopPropagation();
-          (e.target as any).releasePointerCapture(e.pointerId);
-          onStroke(stroke.current);
-          stroke.current = [];
+          const point = pointAt(e);
+          if (point) extend(point, true);
+          const points = [...current.points];
+          cancel();
+          onStroke(points);
         }}
+        onPointerCancel={cancel}
         onClick={(e) => {
           e.stopPropagation();
           if (!painting) onGround(e.point.x, e.point.z);
@@ -86,7 +183,7 @@ function Terrain({
         <mesh
           position={[
             hover.x,
-            heightAt(world, hover.x, hover.z) + 0.25,
+            heightAt(displayed, hover.x, hover.z) + 0.25,
             hover.z,
           ]}
           rotation={[-Math.PI / 2, 0, 0]}
@@ -394,6 +491,7 @@ function SceneContents({
   radius,
   onStroke,
   onView,
+  brushMode,
   movable,
   onMove,
 }: SceneProps) {
@@ -555,6 +653,7 @@ function SceneContents({
         shadow-camera-far={200}
       />
       <Terrain
+        mode={brushMode}
         meshRef={terrain}
         world={shown}
         onGround={(x, z) => {
@@ -631,6 +730,7 @@ interface SceneProps {
   onGround: (x: number, z: number) => void;
   preview: World | null;
   painting: boolean;
+  brushMode: BrushMode;
   radius: number;
   onView: (view: CameraView) => void;
   onStroke: (points: { x: number; z: number }[]) => void;

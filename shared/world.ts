@@ -49,6 +49,44 @@ export const locationSchema = z
   })
   .strict();
 export type Location = z.infer<typeof locationSchema>;
+export const pointSchema = z
+  .object({
+    x: z.number().min(-128).max(128),
+    z: z.number().min(-128).max(128),
+  })
+  .strict();
+export type Point = z.infer<typeof pointSchema>;
+export const roadSchema = z
+  .object({
+    id: z.string().min(1).max(100),
+    name: z.string().min(1).max(100),
+    points: z.array(pointSchema).min(1).max(400),
+    radius: z.number().min(2).max(40),
+  })
+  .strict();
+export type Road = z.infer<typeof roadSchema>;
+export function samplePath(
+  points: Point[],
+  spacing: number,
+  max = 400,
+): Point[] {
+  if (!points.length) return [];
+  const out = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1],
+      b = points[i],
+      n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / spacing));
+    for (let j = 1; j <= n; j++) {
+      if (out.length >= max)
+        throw Error("Road is too long. Draw it in shorter sections.");
+      out.push({
+        x: a.x + ((b.x - a.x) * j) / n,
+        z: a.z + ((b.z - a.z) * j) / n,
+      });
+    }
+  }
+  return out;
+}
 const cells = z.array(z.number().min(-12).max(32)).length(GRID * GRID);
 export const worldSchema = z
   .object({
@@ -59,13 +97,14 @@ export const worldSchema = z
     heights: cells,
     paint: z.array(z.number().int().min(0).max(3)).length(GRID * GRID),
     objects: z.array(objectSchema).max(2000),
+    roads: z.array(roadSchema).max(100).default([]),
     locations: z.array(locationSchema).max(100),
     focus: z.string().nullable(),
     focusVersion: z.number().int().nonnegative().default(0),
   })
   .strict()
   .superRefine((w, c) => {
-    const ids = [...w.objects, ...w.locations].map((o) => o.id);
+    const ids = [...w.objects, ...w.locations, ...w.roads].map((o) => o.id);
     if (new Set(ids).size !== ids.length)
       c.addIssue({ code: "custom", message: "Duplicate IDs" });
     if (w.focus && !w.locations.some((l) => l.id === w.focus))
@@ -102,6 +141,7 @@ export const operationSchema = z.discriminatedUnion("type", [
     .strict(),
   z.object({ type: z.literal("remove"), id: z.string() }).strict(),
   brushSchema,
+  z.object({ type: z.literal("road"), road: roadSchema }).strict(),
 ]);
 export const patchSchema = z
   .object({
@@ -111,6 +151,7 @@ export const patchSchema = z
   })
   .strict();
 export type Patch = z.infer<typeof patchSchema>;
+export type BrushMode = z.infer<typeof brushSchema>["mode"];
 export function heightAt(w: Pick<World, "heights">, x: number, z: number) {
   const gx = Math.max(0, Math.min(64, (x + 128) / 4)),
     gz = Math.max(0, Math.min(64, (z + 128) / 4));
@@ -133,7 +174,7 @@ export function brush(w: World, op: z.infer<typeof brushSchema>) {
   for (let j = 0; j < GRID; j++)
     for (let i = 0; i < GRID; i++) {
       const d = Math.hypot(i * 4 - 128 - op.x, j * 4 - 128 - op.z);
-      if (d > op.radius) continue;
+      if (d >= op.radius - 1e-6) continue;
       const k = j * GRID + i,
         f = (1 - d / op.radius) * op.strength;
       if (["grass", "dirt", "stone", "road"].includes(op.mode)) {
@@ -165,6 +206,29 @@ export function applyPatch(world: World, input: unknown): World {
     );
   const w = structuredClone(world);
   for (const op of p.operations) {
+    if (op.type === "road") {
+      if (
+        [...w.roads, ...w.objects, ...w.locations].some(
+          (o) => o.id === op.road.id,
+        )
+      )
+        throw Error(`ID already exists: ${op.road.id}`);
+      const points = samplePath(
+        op.road.points,
+        Math.max(1, Math.min(2, op.road.radius / 3)),
+        2000,
+      );
+      for (const point of points)
+        brush(w, {
+          type: "brush",
+          mode: "road",
+          ...point,
+          radius: op.road.radius,
+          strength: 1.5,
+        });
+      w.roads.push(op.road);
+      continue;
+    }
     if (op.type === "brush") {
       brush(w, op);
       continue;
@@ -172,7 +236,8 @@ export function applyPatch(world: World, input: unknown): World {
     if (op.type === "add") {
       if (
         w.objects.some((o) => o.id === op.object.id) ||
-        w.locations.some((l) => l.id === op.object.id)
+        w.locations.some((l) => l.id === op.object.id) ||
+        w.roads.some((r) => r.id === op.object.id)
       )
         throw Error(`ID already exists: ${op.object.id}`);
       w.objects.push(op.object);
@@ -195,6 +260,17 @@ export function starter(): World {
     heights: [],
     paint: [],
     objects: [],
+    roads: [
+      {
+        id: "road-old-river",
+        name: "Old river road",
+        radius: 4,
+        points: [
+          { x: -100, z: 0 },
+          { x: 24, z: 0 },
+        ],
+      },
+    ],
     locations: [
       { id: "loc-square", name: "Town square", x: 0, z: 0 },
       { id: "loc-docks", name: "Blackwater docks", x: 30, z: 12 },

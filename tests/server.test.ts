@@ -175,6 +175,37 @@ test("server authorization, live sync, undo, revisions, portrait and restart per
     await dm.next("saved");
     assert.equal(refocus.focusVersion, world.focusVersion + 1);
     world = refocus;
+    dm.socket.send(
+      JSON.stringify({
+        type: "patch",
+        token,
+        baseRevision: world.revision,
+        patch: {
+          worldId: world.id,
+          baseRevision: world.revision,
+          operations: [
+            {
+              type: "road",
+              road: {
+                id: "server-road",
+                name: "Saved lane",
+                points: [
+                  { x: -30, z: -45 },
+                  { x: 30, z: -45 },
+                ],
+                radius: 4,
+              },
+            },
+          ],
+        },
+      }),
+    );
+    world = (await dm.next("world")).world;
+    await dm.next("saved");
+    let shared = await viewer.next("world");
+    while (shared.world.revision < world.revision)
+      shared = await viewer.next("world");
+    assert.ok(shared.world.roads.some((r: any) => r.id === "server-road"));
     for (const c of clients) c.socket.close();
     await stop();
     await start();
@@ -182,6 +213,8 @@ test("server authorization, live sync, undo, revisions, portrait and restart per
     assert.equal(restored.objects[0].name, "Test tavern");
     assert.equal(restored.focus, "loc-docks");
     assert.equal(restored.revision, world.revision);
+    assert.ok(restored.roads.some((r: any) => r.id === "server-road"));
+    assert.deepEqual(restored.paint, world.paint);
   } finally {
     for (const c of clients) c.socket.close();
     await stop();

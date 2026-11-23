@@ -9,10 +9,13 @@ import {
   type World,
   type WorldObject,
   type CameraView,
+  type BrushMode,
+  type Point,
   type Patch,
   worldSchema,
 } from "../shared/world";
 import "./style.css";
+import { housesAlongRoad } from "../shared/roads";
 import { standalone, LocalSession, clientFetch } from "./local";
 const token = standalone
   ? "local"
@@ -68,6 +71,8 @@ function App() {
     [point, setPoint] = useState({ x: 0, z: 0 }),
     [undo, setUndo] = useState(false),
     [redo, setRedo] = useState(false);
+  const [selectedRoad, setSelectedRoad] = useState<string | null>(null);
+  const [houseSpacing, setHouseSpacing] = useState(18);
   const view = useRef<CameraView | null>(null);
   const local = useRef<LocalSession | null>(null);
   const ws = useRef<WebSocket | null>(null),
@@ -168,6 +173,43 @@ function App() {
           operations: ops,
         },
       });
+  }
+  function finishStroke(points: Point[]) {
+    if (!world || !points.length) return;
+    if (tool === "road") {
+      const id =
+        "road-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6);
+      operations([
+        {
+          type: "road",
+          road: { id, name: `Road ${world.roads.length + 1}`, points, radius },
+        },
+      ]);
+      setSelectedRoad(id);
+    } else
+      operations(
+        points.map((p) => ({
+          type: "brush",
+          mode: tool as BrushMode,
+          ...p,
+          radius,
+          strength: 1.5,
+        })),
+      );
+  }
+  function populateRoad() {
+    if (!world) return;
+    const road =
+      world.roads.find((r) => r.id === selectedRoad) || world.roads.at(-1);
+    if (!road) return;
+    const houses = housesAlongRoad(world, road, houseSpacing);
+    if (!houses.length) {
+      setStatus(
+        "No clear building lots here. Try a longer road on flatter, drier, open ground.",
+      );
+      return;
+    }
+    operations(houses.map((object) => ({ type: "add", object })));
   }
   function add(asset: string, x: number, z: number, count = 1) {
     const colors = ["#b27f65", "#709a8a", "#c4a65f", "#8c7aa3", "#6d8aab"];
@@ -391,7 +433,10 @@ function App() {
                     <button
                       key={t}
                       className={tool === t ? "active" : ""}
-                      onClick={() => setTool(t)}
+                      onClick={() => {
+                        setTool(t);
+                        if (t === "road") setRadius(4);
+                      }}
                     >
                       {t === "road" ? "〰 " : ""}
                       {t}
@@ -408,6 +453,64 @@ function App() {
                     onChange={(e) => setRadius(+e.target.value)}
                   />
                 </label>
+                {tool === "road" && (
+                  <section className="road-builder">
+                    <h3>Turn a road into a neighborhood</h3>
+                    <p>
+                      Your road appears as you draw. Release to save; Escape
+                      cancels.
+                    </p>
+                    <label>
+                      Choose a road
+                      <select
+                        aria-label="Road to populate"
+                        value={
+                          world.roads.some((r) => r.id === selectedRoad)
+                            ? selectedRoad!
+                            : world.roads.at(-1)?.id || ""
+                        }
+                        onChange={(e) => setSelectedRoad(e.target.value)}
+                      >
+                        {!world.roads.length && (
+                          <option value="">Draw a road first</option>
+                        )}
+                        {world.roads.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      House spacing <b>{houseSpacing} m</b>
+                      <input
+                        aria-label="House spacing"
+                        type="range"
+                        min="12"
+                        max="40"
+                        value={houseSpacing}
+                        onChange={(e) => setHouseSpacing(+e.target.value)}
+                      />
+                    </label>
+                    <button
+                      className="primary wide"
+                      disabled={
+                        !world.roads.length ||
+                        !connected ||
+                        pending.current ||
+                        !!preview
+                      }
+                      onClick={populateRoad}
+                    >
+                      ⌂ Add houses along road
+                    </button>
+                    <p>
+                      Places up to 24 cottages on both sides, facing the road.
+                      Skips water, slopes, roads, and occupied lots. Undo
+                      removes the whole batch.
+                    </p>
+                  </section>
+                )}
                 <p>
                   Water sits at −1.3 m. Lower terrain to reveal it. Flatten
                   ground before placing buildings on a slope.
@@ -486,19 +589,12 @@ function App() {
               onView={(v) => {
                 view.current = v;
               }}
-              painting={!!token && tool !== "select"}
-              radius={radius}
-              onStroke={(points) =>
-                operations(
-                  points.map((p) => ({
-                    type: "brush",
-                    mode: tool as any,
-                    ...p,
-                    radius,
-                    strength: 1.5,
-                  })),
-                )
+              painting={
+                !!token && tool !== "select" && connected && !pending.current
               }
+              radius={radius}
+              brushMode={tool === "select" ? "grass" : (tool as BrushMode)}
+              onStroke={finishStroke}
               world={world}
               selected={selected}
               onSelect={(id) => {
