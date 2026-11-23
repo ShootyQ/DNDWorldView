@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
-import { Canvas, ThreeEvent } from "@react-three/fiber";
+import { Canvas, ThreeEvent, useThree } from "@react-three/fiber";
 import { OrbitControls, Html } from "@react-three/drei";
 import * as THREE from "three";
 import { portraitUrl } from "./local";
@@ -16,7 +16,9 @@ function Terrain({
   painting,
   radius,
   onStroke,
+  meshRef,
 }: {
+  meshRef: React.RefObject<THREE.Mesh | null>;
   world: World;
   onGround: (x: number, z: number) => void;
   painting: boolean;
@@ -43,6 +45,7 @@ function Terrain({
   return (
     <>
       <mesh
+        ref={meshRef}
         geometry={geometry}
         receiveShadow
         onPointerDown={(e) => {
@@ -255,8 +258,10 @@ export function Model({ o }: { o: WorldObject }) {
 function Trees({
   world,
   onSelect,
+  onDragStart,
 }: {
   world: World;
+  onDragStart: (id: string, e: ThreeEvent<PointerEvent>) => void;
   onSelect: (id: string) => void;
 }) {
   const trees = world.objects.filter((o) => o.asset === "tree");
@@ -298,6 +303,10 @@ function Trees({
         ref={trunk}
         args={[undefined, undefined, trees.length]}
         castShadow
+        onPointerDown={(e) => {
+          if (e.instanceId !== undefined)
+            onDragStart(trees[e.instanceId].id, e);
+        }}
         onClick={click}
       >
         <cylinderGeometry args={[0.3, 0.5, 4, 6]} />
@@ -307,6 +316,10 @@ function Trees({
         ref={lower}
         args={[undefined, undefined, trees.length]}
         castShadow
+        onPointerDown={(e) => {
+          if (e.instanceId !== undefined)
+            onDragStart(trees[e.instanceId].id, e);
+        }}
         onClick={click}
       >
         <coneGeometry args={[3, 4, 7]} />
@@ -316,6 +329,10 @@ function Trees({
         ref={upper}
         args={[undefined, undefined, trees.length]}
         castShadow
+        onPointerDown={(e) => {
+          if (e.instanceId !== undefined)
+            onDragStart(trees[e.instanceId].id, e);
+        }}
         onClick={click}
       >
         <coneGeometry args={[2.4, 4, 7]} />
@@ -367,7 +384,7 @@ function Camera({
     />
   );
 }
-export function Scene({
+function SceneContents({
   world,
   selected,
   onSelect,
@@ -377,26 +394,151 @@ export function Scene({
   radius,
   onStroke,
   onView,
-}: {
-  world: World;
-  selected: string | null;
-  onSelect: (id: string) => void;
-  onGround: (x: number, z: number) => void;
-  preview: World | null;
-  painting: boolean;
-  radius: number;
-  onView: (view: CameraView) => void;
-  onStroke: (points: { x: number; z: number }[]) => void;
-}) {
-  const shown = preview || world;
+  movable,
+  onMove,
+}: SceneProps) {
+  const terrain = useRef<THREE.Mesh>(null);
+  const { camera, gl, controls, invalidate } = useThree();
+  const [dragPosition, setDragPosition] = useState<{
+    id: string;
+    x: number;
+    z: number;
+  } | null>(null);
+  const drag = useRef<{
+    id: string;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    offsetX: number;
+    offsetZ: number;
+    x: number;
+    z: number;
+    moved: boolean;
+    wasEnabled: boolean;
+  } | null>(null);
+  const suppressClick = useRef(false);
+  const base = preview || world;
+  const shown = useMemo(
+    () =>
+      dragPosition
+        ? {
+            ...base,
+            objects: base.objects.map((o) =>
+              o.id === dragPosition.id
+                ? { ...o, x: dragPosition.x, z: dragPosition.z }
+                : o,
+            ),
+          }
+        : base,
+    [base, dragPosition],
+  );
+  const moveCallback = useRef(onMove);
+  moveCallback.current = onMove;
+  function groundAt(clientX: number, clientY: number) {
+    const rect = gl.domElement.getBoundingClientRect();
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(
+      new THREE.Vector2(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        (-(clientY - rect.top) / rect.height) * 2 + 1,
+      ),
+      camera,
+    );
+    const hit = terrain.current
+      ? ray.intersectObject(terrain.current, false)[0]
+      : undefined;
+    return hit?.point;
+  }
+  function startDrag(id: string, e: ThreeEvent<PointerEvent>) {
+    if (!movable || preview || painting || e.button !== 0 || drag.current)
+      return;
+    e.stopPropagation();
+    const o = world.objects.find((o) => o.id === id);
+    const point = groundAt(e.clientX, e.clientY);
+    if (!o || !point) return;
+    const c = controls as any;
+    drag.current = {
+      id,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      offsetX: o.x - point.x,
+      offsetZ: o.z - point.z,
+      x: o.x,
+      z: o.z,
+      moved: false,
+      wasEnabled: c?.enabled ?? true,
+    };
+    if (c) c.enabled = false;
+    gl.domElement.setPointerCapture(e.pointerId);
+    gl.domElement.style.cursor = "grabbing";
+    setDragPosition({ id, x: o.x, z: o.z });
+    onSelect(id);
+  }
+  useEffect(() => {
+    const canvas = gl.domElement;
+    function move(e: PointerEvent) {
+      const d = drag.current;
+      if (!d || e.pointerId !== d.pointerId) return;
+      if (
+        !d.moved &&
+        Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < 4
+      )
+        return;
+      const point = groundAt(e.clientX, e.clientY);
+      if (!point) return;
+      d.moved = true;
+      d.x = Math.max(-128, Math.min(128, point.x + d.offsetX));
+      d.z = Math.max(-128, Math.min(128, point.z + d.offsetZ));
+      setDragPosition({ id: d.id, x: d.x, z: d.z });
+      invalidate();
+    }
+    function finish(e?: PointerEvent) {
+      const d = drag.current;
+      if (!d || (e && e.pointerId !== d.pointerId)) return;
+      drag.current = null;
+      if (canvas.hasPointerCapture(d.pointerId))
+        canvas.releasePointerCapture(d.pointerId);
+      if (controls) (controls as any).enabled = d.wasEnabled;
+      canvas.style.cursor = "";
+      setDragPosition(null);
+      suppressClick.current = d.moved;
+      setTimeout(() => {
+        suppressClick.current = false;
+      }, 0);
+      if (d.moved && e?.type === "pointerup")
+        moveCallback.current(d.id, d.x, d.z);
+      invalidate();
+    }
+    function blur() {
+      finish();
+    }
+    function escape(e: KeyboardEvent) {
+      if (e.key === "Escape") finish();
+    }
+    canvas.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+    window.addEventListener("keydown", escape);
+    window.addEventListener("blur", blur);
+    return () => {
+      finish();
+      canvas.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      window.removeEventListener("keydown", escape);
+      window.removeEventListener("blur", blur);
+    };
+  }, [camera, gl, controls, invalidate]);
+  function select(id: string) {
+    if (suppressClick.current) {
+      suppressClick.current = false;
+      return;
+    }
+    onSelect(id);
+  }
   return (
-    <Canvas
-      frameloop="demand"
-      shadows
-      dpr={[1, 1.5]}
-      camera={{ position: [52, 50, 60], fov: 48 }}
-      gl={{ antialias: true }}
-    >
+    <>
       <color attach="background" args={["#cbd9d2"]} />
       <fog attach="fog" args={["#cbd9d2", 120, 320]} />
       <ambientLight intensity={1.2} />
@@ -413,8 +555,15 @@ export function Scene({
         shadow-camera-far={200}
       />
       <Terrain
+        meshRef={terrain}
         world={shown}
-        onGround={onGround}
+        onGround={(x, z) => {
+          if (suppressClick.current) {
+            suppressClick.current = false;
+            return;
+          }
+          onGround(x, z);
+        }}
         painting={painting && !preview}
         radius={radius}
         onStroke={onStroke}
@@ -428,7 +577,7 @@ export function Scene({
           opacity={0.85}
         />
       </mesh>
-      <Trees world={shown} onSelect={onSelect} />
+      <Trees world={shown} onSelect={select} onDragStart={startDrag} />
       {shown.objects
         .filter((o) => o.asset !== "tree")
         .map((o) => (
@@ -440,9 +589,10 @@ export function Scene({
               o.z,
             ]}
             rotation={[0, o.rotation, 0]}
+            onPointerDown={(e) => startDrag(o.id, e)}
             onClick={(e: ThreeEvent<MouseEvent>) => {
               e.stopPropagation();
-              onSelect(o.id);
+              select(o.id);
             }}
           >
             <Model o={o} />
@@ -466,7 +616,37 @@ export function Scene({
             <meshBasicMaterial color="#f5d38b" side={THREE.DoubleSide} />
           </mesh>
         ))}
-      <Camera world={world} onView={onView} painting={painting && !preview} />
+      <Camera
+        world={world}
+        onView={onView}
+        painting={(painting && !preview) || !!dragPosition}
+      />
+    </>
+  );
+}
+interface SceneProps {
+  world: World;
+  selected: string | null;
+  onSelect: (id: string) => void;
+  onGround: (x: number, z: number) => void;
+  preview: World | null;
+  painting: boolean;
+  radius: number;
+  onView: (view: CameraView) => void;
+  onStroke: (points: { x: number; z: number }[]) => void;
+  movable: boolean;
+  onMove: (id: string, x: number, z: number) => void;
+}
+export function Scene(props: SceneProps) {
+  return (
+    <Canvas
+      frameloop="demand"
+      shadows
+      dpr={[1, 1.5]}
+      camera={{ position: [52, 50, 60], fov: 48 }}
+      gl={{ antialias: true }}
+    >
+      <SceneContents {...props} />
     </Canvas>
   );
 }

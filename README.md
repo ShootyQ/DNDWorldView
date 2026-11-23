@@ -23,7 +23,7 @@ The production server serves `dist`; the development server uses Vite middleware
 
 ## Build a world
 
-- Choose an asset, then click ground to place it. Select an object to rename, move, rotate, recolor, duplicate or delete. Click **A little more life** to place five randomized people.
+- Choose an asset, then click ground to place it. Grab and drag any object to move it freely without snapping. The camera stays fixed, and releasing saves one undoable move. Press Escape to cancel. Select an object to enter exact X/Z coordinates, rename, rotate, recolor, duplicate or delete. Drag empty ground to orbit. The Move button also supports click-to-place movement. Click **A little more life** to place five randomized people.
 - In Terrain, choose raise/lower/smooth/flatten or a ground material, adjust radius, and drag to apply a soft brush stroke. Each stroke is one undoable edit. Switch to Select to orbit; wheel/pinch zooms. Flatten slopes before placing buildings. Lower terrain below -1.3 m to reveal water.
 - Orbit, pan, and zoom to frame a location, then save the current camera view in Locations. **Show** brings all viewers there; they retain independent camera control until the next location change.
 - Place Player portrait markers, then upload character images through their inspector. Uploads are cropped and converted to 256px PNG. Only the DM moves markers.
@@ -55,3 +55,5 @@ BASE_PATH=/DNDWorldView/ npx vite preview
 ```
 
 Normal `npm run build` and `npm run dev` retain server-backed sessions. Never publish the `data/` folder or a DM token; the Pages artifact contains only `dist/`.
+
+For the direct-placement browser regression test, build the Pages version, run Vite preview as above, then run `CHROMIUM_PATH=/usr/bin/chromium node --import tsx tests/drag.mjs` (or omit CHROMIUM_PATH when Playwright Chromium is installed).

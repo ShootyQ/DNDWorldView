@@ -472,6 +472,17 @@ function App() {
         <main>
           <div className="scene">
             <Scene
+              movable={
+                !!token &&
+                !place &&
+                tool === "select" &&
+                !preview &&
+                connected &&
+                !pending.current
+              }
+              onMove={(id, x, z) =>
+                operations([{ type: "update", id, changes: { x, z } }])
+              }
               onView={(v) => {
                 view.current = v;
               }}
@@ -618,6 +629,45 @@ function App() {
                 }}
               />
               <code>{object.id}</code>
+              <div className="position-fields">
+                {(["x", "z"] as const).map((axis) => (
+                  <label key={axis}>
+                    {axis.toUpperCase()} (m)
+                    <input
+                      aria-label={`${axis.toUpperCase()} position`}
+                      key={object.id + object[axis]}
+                      type="number"
+                      min={-128}
+                      max={128}
+                      step="0.1"
+                      defaultValue={object[axis].toFixed(2)}
+                      onBlur={(e) => {
+                        const n = Number(e.currentTarget.value);
+                        if (
+                          e.currentTarget.value !== "" &&
+                          Number.isFinite(n) &&
+                          n >= -128 &&
+                          n <= 128
+                        ) {
+                          if (Math.abs(n - object[axis]) > 0.005)
+                            operations([
+                              {
+                                type: "update",
+                                id: object.id,
+                                changes: { [axis]: n },
+                              },
+                            ]);
+                        } else {
+                          e.currentTarget.value = object[axis].toFixed(2);
+                          setStatus(
+                            "Position must be between −128 and 128 meters.",
+                          );
+                        }
+                      }}
+                    />
+                  </label>
+                ))}
+              </div>
               <div className="inspector-actions">
                 <button
                   onClick={() => {
@@ -750,7 +800,7 @@ function App() {
             <span>
               ◉{" "}
               {token
-                ? "Orbit to explore · Click to create"
+                ? "Drag objects to move · Drag ground to orbit"
                 : "Drag to orbit · Pinch to zoom"}
             </span>
             <span>LOW-POLY · HIGH POSSIBILITY</span>

@@ -887,3 +887,22 @@ footer b {
 .preview-review button {
   font-size: 11px;
 }
+
+.position-fields {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.inspector .position-fields label {
+  display: block;
+  min-width: 0;
+  flex: 1;
+  margin-top: 0;
+  font-size: 10px;
+}
+.position-fields input {
+  width: 100%;
+  margin-top: 5px;
+  padding: 7px;
+  font-size: 12px;
+}
